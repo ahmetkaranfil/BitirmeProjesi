@@ -9,6 +9,10 @@
 
 # Core ML / vision stack
 ultralytics==8.0.196
+# torch < 2.6 — yeni varsayilan ``weights_only=True`` Ultralytics 8.0.x
+# checkpoint formatiyla uyumsuz; 2.5.1 hem CPU hem CUDA buildi icin stabil.
+torch==2.5.1
+torchvision==0.20.1
 opencv-python==4.8.1.78
 numpy==1.24.4
 pyyaml==6.0.1
