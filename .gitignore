@@ -1,0 +1,51 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# --- Virtual environments ---
+.venv/
+.venv_py313_old/
+venv/
+env/
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Project artifacts ---
+# Veri setleri (ham + hazirlanmis): repo'ya koymuyoruz, ihtiyac halinde
+# README'deki dataset linkinden indirilir.
+eye_yawn_dataset/
+dataset/
+
+# Eski test/log dosyalari
+logs/*.log
+logs/*.log.*
+
+# Egitim ciktilari (Ultralytics): grafikler ve gecici agirliklar
+runs/
+
+# Ultralytics indirilen on-egitimli agirliklar (proje koku)
+yolov8*.pt
+!models/eye_best.pt
+!models/mouth_best.pt
+
+# Statik tahmin ciktilari (annotated kayitlar)
+*_pred.jpg
+*_pred.png
+
+# Test cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build / dist
+build/
+dist/
+*.egg-info/

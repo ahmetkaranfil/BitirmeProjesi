@@ -1,0 +1,23 @@
+# Driver Drowsiness Detection - pinned dependencies
+# Supported Python: 3.8 - 3.11
+#
+# Install into a clean virtualenv with:
+#   pip install -r requirements.txt
+#
+# Versions are pinned to exact (paket==majör.minör.yama) per Req 11.3
+# and chosen to be compatible across the full Python 3.8-3.11 range.
+
+# Core ML / vision stack
+ultralytics==8.0.196
+opencv-python==4.8.1.78
+numpy==1.24.4
+pyyaml==6.0.1
+
+# Optional cross-platform sound playback (Windows falls back to winsound)
+playsound==1.2.2
+
+# Test stack
+pytest==7.4.4
+hypothesis==6.92.1
+pytest-cov==4.1.0
+pyfakefs==5.3.5

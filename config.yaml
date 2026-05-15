@@ -1,0 +1,36 @@
+# Driver Drowsiness Detection - varsayilan yapilandirma
+#
+# Bu dosya tum AppConfig alanlarini tasarim dokumanindaki varsayilan
+# degerleriyle tasir. load_config() bu dosyayi okuyup validate() ile
+# dogrular; aralik disi veya tip hatali her deger ConfigError ile
+# reddedilir (Requirements 8.2, 8.3, 8.6).
+#
+# NOT: model_path bir egitilmis YOLOv8 siniflandirma agirliginin yolunu
+# gosterir. webcam_detect / static_predict calistirmadan once
+# `python -m src.train` ile bu dosya uretilmelidir; yoksa load_config()
+# "model agirlik dosyasi mevcut degil" mesajiyla ConfigError yukseltir.
+
+# --- Uyari mantigi (Requirements 5.5, 6.5) ---
+closed_eye_duration: 2.0      # 0.5 .. 10.0 saniye
+yawn_count: 3                 # 1 .. 20
+yawn_time_window: 60.0        # 10.0 .. 600.0 saniye
+confidence_threshold: 0.5     # 0.0 .. 1.0
+
+# --- Kamera ve performans (Requirements 4.x, 10.6, 10.7, 10.8) ---
+camera_index: 0               # 0 .. 10
+frame_skip: 1                 # 0 .. 30 (canli tespitte etkin aralik 1..10)
+inference_resolution: null    # null veya 160..1280 araliginda 32 kati
+fps_log_interval: 1.0         # 1.0 .. 60.0 saniye
+
+# --- Model ve dagitim (Requirements 3.5, 8.5, 10.4) ---
+eye_model_path: "models/eye_best.pt"      # goz modeli (Closed/Open)
+mouth_model_path: "models/mouth_best.pt"  # agiz modeli (yawn/no_yawn)
+export_format: "pt"           # pt | onnx | tensorrt
+
+# --- Ses (Requirement 7.x) ---
+enable_sound: false
+
+# --- Loglama (Requirement 9.x) ---
+log_file: "logs/app.log"
+log_max_bytes: 10485760       # 1 MB .. 100 MB (10 MB)
+verbose: false
