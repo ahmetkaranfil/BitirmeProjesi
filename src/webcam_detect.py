@@ -939,6 +939,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     from src.logger import FpsTracker, build_logger
     from src.predictor import Predictor
     from src.sound_alert import SoundAlerter
+    from dataclasses import replace as _dc_replace
 
     parser = argparse.ArgumentParser(
         prog="python -m src.webcam_detect",
@@ -1009,6 +1010,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "FATIGUE": _DEFAULT_FATIGUE_SOUND_PATH,
             },
             enable_sound=cfg.enable_sound,
+            max_duration_s=cfg.alert_sound_duration,
             logger=logger,
         )
 
@@ -1024,6 +1026,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         mouth_conf: float = 0.0
         active_alerts: tuple[str, ...] = ()
         alert_state = INITIAL_STATE
+        prev_drowsy_active: bool = False
+        # FATIGUE alert latches itself in the pure core, but the UX
+        # contract here is "play for ``alert_sound_duration`` seconds
+        # then forget about it" so a fresh batch of yawns can fire a
+        # new alert. ``fatigue_reset_at_s`` is the monotonic deadline
+        # at which the windowed yawn list is cleared and the latched
+        # flag is dropped; ``None`` means no reset is pending.
+        fatigue_reset_at_s: Optional[float] = None
 
         # ``cv2.imshow`` is unavailable on headless builds; latch the
         # first failure so we do not flood the log with the same
@@ -1046,7 +1056,50 @@ def main(argv: Optional[list[str]] = None) -> int:
                     # human-readable Turkish alert text comes from the
                     # pure core, so we just relay it.
                     logger.info("%s: %s", event.kind, event.message)
-                    sound.play(event.kind)
+                    # DROWSY loops indefinitely until the driver opens
+                    # their eyes; FATIGUE plays for the configured
+                    # ``alert_sound_duration``.
+                    sound.play(
+                        event.kind,
+                        loop_until_stopped=(event.kind == "DROWSY"),
+                    )
+                    if event.kind == "FATIGUE":
+                        # Schedule a state reset once the FATIGUE
+                        # sound has finished. After the deadline the
+                        # rolling yawn-event list is cleared and the
+                        # latched alert flag is dropped, so the next
+                        # ``yawn_count`` yawns can fire a new alert
+                        # without waiting for the old events to age
+                        # out of ``yawn_time_window_s``.
+                        fatigue_reset_at_s = (
+                            pred.t_capture_s + cfg.alert_sound_duration
+                        )
+
+                # When the eyes re-open, ``update`` clears
+                # ``drowsy_alert_active``. Detect that falling edge and
+                # stop the looping DROWSY sound so the alarm goes
+                # silent the moment the driver wakes up.
+                if (
+                    prev_drowsy_active
+                    and not alert_state.drowsy_alert_active
+                ):
+                    sound.stop("DROWSY")
+                prev_drowsy_active = alert_state.drowsy_alert_active
+
+                # If a FATIGUE reset is pending and its deadline has
+                # passed, wipe the rolling yawn state so the next
+                # batch of yawns can fire a brand new FATIGUE alert.
+                if (
+                    fatigue_reset_at_s is not None
+                    and pred.t_capture_s >= fatigue_reset_at_s
+                ):
+                    alert_state = _dc_replace(
+                        alert_state,
+                        yawn_event_times_s=(),
+                        in_yawn_block=False,
+                        fatigue_alert_active=False,
+                    )
+                    fatigue_reset_at_s = None
 
                 eye_label = pred.eye
                 mouth_label = pred.mouth

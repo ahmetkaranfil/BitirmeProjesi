@@ -39,6 +39,7 @@ from typing import Callable, Dict, Mapping, Optional
 _BACKEND_WINSOUND = "winsound"
 _BACKEND_PLAYSOUND = "playsound"
 _BACKEND_APLAY = "aplay"
+_BACKEND_AFPLAY = "afplay"
 
 
 # ``StopCallback`` is a zero-arg callable that stops the currently
@@ -108,7 +109,7 @@ class SoundAlerter:
     # Public API.
     # ------------------------------------------------------------------
 
-    def play(self, kind: str) -> None:
+    def play(self, kind: str, loop_until_stopped: bool = False) -> None:
         """Start async playback for ``kind``; no-op when disabled.
 
         Returns as soon as the platform call has been issued, so
@@ -116,10 +117,15 @@ class SoundAlerter:
         Requirement 7.1. The accompanying :class:`threading.Timer`
         terminates the sound after ``max_duration_s`` seconds.
 
+        ``loop_until_stopped=True`` disables the duration cap timer
+        so the sound keeps looping until ``stop(kind)`` is called.
+        This is used by the DROWSY alert: the sound must keep playing
+        until the driver opens their eyes.
+
         Concurrency dedupe (Requirement 7.7): while a previous sound
-        for the same ``kind`` is still active (its stop-timer has not
-        yet fired), additional ``play(kind)`` calls return immediately
-        without invoking the backend.
+        for the same ``kind`` is still active, additional
+        ``play(kind)`` calls return immediately without invoking the
+        backend.
 
         Error handling (Requirement 7.6): any exception raised by the
         backend (missing file, decode error, unavailable subprocess,
@@ -132,12 +138,18 @@ class SoundAlerter:
         if not self._enable_sound:
             return
 
-        # Concurrency dedupe: if a timer for this kind is registered,
-        # an earlier sound is still within its audible window. Drop
-        # the new request silently so overlapping alerts do not stack.
+        # Concurrency dedupe: if a sound for this kind is already
+        # active, drop the new request silently so overlapping alerts
+        # do not stack. We track activity via either a registered
+        # timer (timed playback) or a stop callback without a timer
+        # (loop_until_stopped playback).
         with self._lock:
-            if self._timers.get(kind) is not None:
-                return
+            already_active = (
+                self._timers.get(kind) is not None
+                or self._stop_callbacks.get(kind) is not None
+            )
+        if already_active:
+            return
 
         path = self._sound_files[kind]
 
@@ -146,17 +158,29 @@ class SoundAlerter:
                 stop_cb = self._play_winsound(path)
             elif self._backend == _BACKEND_PLAYSOUND:
                 stop_cb = self._play_playsound(path)
+            elif self._backend == _BACKEND_AFPLAY:
+                stop_cb = self._play_afplay(path)
             else:
                 stop_cb = self._play_aplay(path)
 
-            timer = threading.Timer(
-                self._max_duration_s, self._stop_playback, args=(kind,)
-            )
-            timer.daemon = True
-            with self._lock:
-                self._stop_callbacks[kind] = stop_cb
-                self._timers[kind] = timer
-            timer.start()
+            if loop_until_stopped:
+                # No duration cap; ``stop(kind)`` is the only way to
+                # end this playback. Register the stop callback so
+                # ``stop()`` can find and invoke it.
+                with self._lock:
+                    self._stop_callbacks[kind] = stop_cb
+                    self._timers[kind] = None
+            else:
+                timer = threading.Timer(
+                    self._max_duration_s,
+                    self._stop_playback,
+                    args=(kind,),
+                )
+                timer.daemon = True
+                with self._lock:
+                    self._stop_callbacks[kind] = stop_cb
+                    self._timers[kind] = timer
+                timer.start()
         except Exception as exc:  # noqa: BLE001 - intentional swallow
             # Requirement 7.6: log type + path with a timestamp (the
             # logger formatter already emits ISO-style timestamps) and
@@ -173,6 +197,38 @@ class SoundAlerter:
             )
             return
 
+    def stop(self, kind: str) -> None:
+        """Stop playback for ``kind`` immediately if active.
+
+        Idempotent and thread-safe. Cancels any pending duration timer
+        and invokes the backend stop callback so a looping playback
+        ends right away. No-op if no playback is currently active for
+        the given kind, or if sound is disabled.
+        """
+
+        if not self._enable_sound:
+            return
+
+        with self._lock:
+            stop_cb = self._stop_callbacks.get(kind)
+            timer = self._timers.get(kind)
+            self._stop_callbacks[kind] = None
+            self._timers[kind] = None
+
+        if timer is not None:
+            timer.cancel()
+        if stop_cb is not None:
+            try:
+                stop_cb()
+            except Exception as exc:  # noqa: BLE001
+                self._logger.error(
+                    "Sesli_Uyarici stop failed: kind=%s "
+                    "error_type=%s error=%s",
+                    kind,
+                    type(exc).__name__,
+                    exc,
+                )
+
     # ------------------------------------------------------------------
     # Internal helpers.
     # ------------------------------------------------------------------
@@ -181,13 +237,21 @@ class SoundAlerter:
         """Pick the audio backend based on ``sys.platform``.
 
         * ``win32`` -> ``winsound`` (Requirement 7.3).
-        * Anything else (Linux, Jetson, macOS) -> ``playsound`` if the
+        * ``darwin`` (macOS) -> system ``afplay`` subprocess. On macOS
+          the cross-platform ``playsound`` package depends on PyObjC
+          (``AppKit``), which is not in our pinned requirements; using
+          the built-in ``afplay`` command keeps the install footprint
+          unchanged and avoids the ``ModuleNotFoundError: AppKit``
+          failure inside the playback thread.
+        * Anything else (Linux, Jetson) -> ``playsound`` if the
           package imports cleanly, otherwise an ``aplay`` subprocess
           (Requirement 7.4).
         """
 
         if sys.platform == "win32":
             return _BACKEND_WINSOUND
+        if sys.platform == "darwin":
+            return _BACKEND_AFPLAY
         try:
             import playsound  # noqa: F401  (probe only)
         except Exception:
@@ -243,14 +307,73 @@ class SoundAlerter:
     def _play_aplay(self, path: Path) -> StopCallback:
         """Async play via the ``aplay`` ALSA subprocess (Linux/Jetson)."""
 
-        proc = subprocess.Popen(
-            ["aplay", str(path)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        return self._play_loop_subprocess(["aplay", str(path)])
+
+    def _play_afplay(self, path: Path) -> StopCallback:
+        """Async play via the ``afplay`` subprocess (macOS).
+
+        ``afplay`` ships with macOS, so no extra dependency is needed.
+        Like the ``aplay`` backend, it returns a ``stop`` callback that
+        kills the subprocess if the duration cap timer fires before
+        the clip finishes naturally.
+        """
+
+        return self._play_loop_subprocess(["afplay", str(path)])
+
+    # ------------------------------------------------------------------
+    # Looping subprocess helper.
+    # ------------------------------------------------------------------
+
+    def _play_loop_subprocess(self, argv: list) -> StopCallback:
+        """Repeatedly invoke ``argv`` until told to stop.
+
+        Many alert clips are only 1-3 s long, but ``max_duration_s``
+        can be configured up to 60 s. To stretch a short clip across
+        the full window, we run the playback subprocess in a daemon
+        thread that re-launches it as soon as it exits, until the
+        ``stop_event`` is set by the duration timer (or another
+        ``stop`` call).
+
+        The returned stop callback is idempotent: it sets the event
+        and, if a subprocess is still running, kills it so the loop
+        exits without waiting for the current clip to finish.
+        """
+
+        stop_event = threading.Event()
+        proc_holder: Dict[str, Optional[subprocess.Popen]] = {"proc": None}
+        proc_lock = threading.Lock()
+
+        def loop() -> None:
+            while not stop_event.is_set():
+                try:
+                    proc = subprocess.Popen(
+                        argv,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    self._logger.error(
+                        "Sesli_Uyarici loop subprocess failed: argv=%s "
+                        "error_type=%s error=%s",
+                        argv,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    return
+                with proc_lock:
+                    proc_holder["proc"] = proc
+                proc.wait()
+                with proc_lock:
+                    proc_holder["proc"] = None
+
+        thread = threading.Thread(target=loop, daemon=True)
+        thread.start()
 
         def stop() -> None:
-            if proc.poll() is None:
+            stop_event.set()
+            with proc_lock:
+                proc = proc_holder["proc"]
+            if proc is not None and proc.poll() is None:
                 proc.kill()
 
         return stop

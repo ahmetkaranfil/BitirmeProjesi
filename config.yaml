@@ -28,7 +28,8 @@ mouth_model_path: "models/mouth_best.pt"  # agiz modeli (yawn/no_yawn)
 export_format: "pt"           # pt | onnx | tensorrt
 
 # --- Ses (Requirement 7.x) ---
-enable_sound: false
+enable_sound: true
+alert_sound_duration: 3.0     # 0.5 .. 60.0 saniye (FATIGUE sesi suresi; DROWSY gozler acilana kadar caliyor)
 
 # --- Loglama (Requirement 9.x) ---
 log_file: "logs/app.log"

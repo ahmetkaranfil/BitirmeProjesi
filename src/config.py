@@ -75,6 +75,7 @@ class AppConfig:
 
     # Sound and logging (Requirements 7.x, 9.x)
     enable_sound: bool
+    alert_sound_duration: float
     log_file: Path
     log_max_bytes: int
     verbose: bool
@@ -101,6 +102,7 @@ DEFAULTS: Dict[str, Any] = {
     "mouth_model_path": "models/mouth_best.pt",
     "export_format": "pt",
     "enable_sound": False,
+    "alert_sound_duration": 3.0,
     "log_file": "logs/app.log",
     "log_max_bytes": 10 * 1024 * 1024,
     "verbose": False,
@@ -315,6 +317,9 @@ def validate(raw: Dict[str, Any]) -> AppConfig:
     )
 
     enable_sound = _check_bool("enable_sound", merged["enable_sound"])
+    alert_sound_duration = _check_float_range(
+        "alert_sound_duration", merged["alert_sound_duration"], 0.5, 60.0
+    )
     log_file = _check_path_string(
         "log_file", merged["log_file"], 512
     )
@@ -353,6 +358,7 @@ def validate(raw: Dict[str, Any]) -> AppConfig:
         mouth_model_path=mouth_model_path,
         export_format=export_format,  # type: ignore[arg-type]
         enable_sound=enable_sound,
+        alert_sound_duration=alert_sound_duration,
         log_file=log_file,
         log_max_bytes=log_max_bytes,
         verbose=verbose,
