@@ -1,0 +1,25 @@
+# Driver Drowsiness Detection - Jetson Xavier NX (JetPack 5.1.6) bagimliliklar
+#
+# Python 3.8 (JetPack 5.1.x varsayilani).
+#
+# AYRICA bu dosyadan KURULMAYAN, manuel kurulan paketler:
+#   - torch        : NVIDIA aarch64 wheel'i (PyTorch for Jetson, JP5.x icin 2.1.0)
+#   - torchvision  : kaynaktan derleme (v0.16.1, torch 2.1 ile eslesir)
+#   - opencv       : sistem paketi (apt: python3-opencv, CUDA destekli)
+#   - playsound    : Linux'ta GStreamer baglantisi sorunlu, ALSA (aplay) ile degistirildi
+#
+# Kurulum sirasi:
+#   1) torch + torchvision (manuel, asagidaki rehberdeki Adim 4)
+#   2) sistem opencv'sini venv'e symlink (Adim 6)
+#   3) pip install -r requirements.jetson.txt
+
+# Core ML / vision stack
+ultralytics==8.0.196
+numpy==1.24.4
+pyyaml==6.0.1
+
+# Test stack (opsiyonel ama CI / dogrulama icin tutuyoruz)
+pytest==7.4.4
+hypothesis==6.92.1
+pytest-cov==4.1.0
+pyfakefs==5.3.5
