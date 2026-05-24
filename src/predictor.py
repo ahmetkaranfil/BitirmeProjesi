@@ -15,6 +15,7 @@ Validates Requirements 3.1, 3.2, 3.4, 3.5, 4.3, 8.5, 10.8.
 from __future__ import annotations
 
 import time
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple, Union
 
@@ -329,6 +330,42 @@ class Predictor:
                 )
         return raw
 
+    @staticmethod
+    def _locate_eye_cascade(cv2_module) -> Optional[Path]:
+        """``haarcascade_eye.xml`` icin tasinabilir arama.
+
+        OpenCV PyPI paketi ``cv2.data.haarcascades`` saglar; ancak
+        Jetson / sistem paketinde (``python3-opencv``) bu attribute
+        bulunmaz. Once ``cv2.data`` mevcutsa onu, sonra bilinen
+        sistem yollarini ve ortam degiskenini dener; hicbir yerde
+        bulunamazsa ``None`` doner.
+        """
+
+        candidates: List[Path] = []
+        data = getattr(cv2_module, "data", None)
+        if data is not None:
+            haar_dir = getattr(data, "haarcascades", None)
+            if haar_dir:
+                candidates.append(Path(haar_dir) / "haarcascade_eye.xml")
+
+        env_dir = os.environ.get("OPENCV_HAARCASCADES_DIR")
+        if env_dir:
+            candidates.append(Path(env_dir) / "haarcascade_eye.xml")
+
+        candidates.extend(
+            Path(p) / "haarcascade_eye.xml"
+            for p in (
+                "/usr/share/opencv4/haarcascades",
+                "/usr/local/share/opencv4/haarcascades",
+                "/usr/share/opencv/haarcascades",
+            )
+        )
+
+        for path in candidates:
+            if path.exists():
+                return path
+        return None
+
     def _extract_eye_crop(self, frame: "np.ndarray") -> Optional["np.ndarray"]:
         """OpenCV haarcascade ile goz tespit eder ve en buyuk kirpigi doner.
 
@@ -338,10 +375,8 @@ class Predictor:
         import cv2  # type: ignore[import-not-found]
 
         if self._eye_cascade is None:
-            cascade_path = (
-                Path(cv2.data.haarcascades) / "haarcascade_eye.xml"
-            )
-            if not cascade_path.exists():
+            cascade_path = self._locate_eye_cascade(cv2)
+            if cascade_path is None:
                 # OpenCV kurulumu cascade dosyasini icermiyor; goz
                 # tespiti devre disi.
                 return None
