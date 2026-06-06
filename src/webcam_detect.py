@@ -327,7 +327,7 @@ class CameraCapture:
         # alert-logic / config suites import the package eagerly).
         import cv2  # type: ignore[import-not-found]
 
-        cap = cv2.VideoCapture(self._cfg.source)
+        cap = cv2.VideoCapture(self._cfg.source, cv2.CAP_V4L2)
 
         deadline = time.monotonic() + float(self._cfg.open_timeout_s)
         # Poll until the device flips to ``isOpened`` or the deadline
