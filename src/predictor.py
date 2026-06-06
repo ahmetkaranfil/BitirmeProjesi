@@ -51,7 +51,12 @@ def _load_yolo(model_path: Path):
             "ultralytics paketi kurulu degil. "
             "`pip install -r requirements.txt` ile kurun."
         ) from exc
-    return YOLO(str(model_path), task="classify")
+    model = YOLO(str(model_path), task="classify")
+    # TensorRT engine icin warmup boyutunu 320x320 olarak sabitle.
+    # .pt modellerinde bu cagri warmup'i etkilemez.
+    if str(model_path).endswith(".engine"):
+        model.overrides["imgsz"] = 320
+    return model
 
 
 def _scores_from_result(result: Any) -> Tuple[List[float], dict]:
@@ -271,7 +276,7 @@ class Predictor:
             eye_conf: float = 0.0
             eye_raw = {"Closed": 0.0, "Open": 0.0}
         else:
-            eye_results = self._eye_model(eye_crop, verbose=False, imgsz=eye_crop.shape[0])
+            eye_results = self._eye_model(eye_crop, verbose=False, imgsz=320)
             if not eye_results:
                 raise RuntimeError("Goz modeli bos sonuc dondurdu.")
             eye_scores, eye_names = _scores_from_result(eye_results[0])
