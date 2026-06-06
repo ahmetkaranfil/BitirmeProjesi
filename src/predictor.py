@@ -252,7 +252,11 @@ class Predictor:
                 frame, (target, target), interpolation=cv2.INTER_LINEAR
             )
 
-        mouth_results = self._mouth_model(mouth_frame, verbose=False)
+        mouth_results = self._mouth_model(
+            mouth_frame,
+            verbose=False,
+            imgsz=mouth_frame.shape[0] if self.inference_resolution is None else int(self.inference_resolution),
+        )
         if not mouth_results:
             raise RuntimeError("Agiz modeli bos sonuc dondurdu.")
         mouth_scores, mouth_names = _scores_from_result(mouth_results[0])
@@ -267,7 +271,7 @@ class Predictor:
             eye_conf: float = 0.0
             eye_raw = {"Closed": 0.0, "Open": 0.0}
         else:
-            eye_results = self._eye_model(eye_crop, verbose=False)
+            eye_results = self._eye_model(eye_crop, verbose=False, imgsz=eye_crop.shape[0])
             if not eye_results:
                 raise RuntimeError("Goz modeli bos sonuc dondurdu.")
             eye_scores, eye_names = _scores_from_result(eye_results[0])
