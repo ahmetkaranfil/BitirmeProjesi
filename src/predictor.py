@@ -51,7 +51,7 @@ def _load_yolo(model_path: Path):
             "ultralytics paketi kurulu degil. "
             "`pip install -r requirements.txt` ile kurun."
         ) from exc
-    return YOLO(str(model_path))
+    return YOLO(str(model_path), task="classify")
 
 
 def _scores_from_result(result: Any) -> Tuple[List[float], dict]:
